@@ -145,7 +145,7 @@
             top: 50%;
             transform: translate(-50%, -50%);
             z-index: 20;
-            pointer-events: none;
+            pointer-events: auto;
             min-width: 260px;
             max-width: min(72vw, 560px);
             background: rgba(255,255,255,.96);
@@ -156,6 +156,13 @@
             text-align: center;
             opacity: 0;
             transition: opacity .12s ease;
+            cursor: grab;
+            user-select: none;
+            touch-action: none;
+        }
+
+        .center-info.dragging{
+            cursor: grabbing;
         }
 
         .center-info .d{
@@ -282,6 +289,13 @@
             pointer-events: none;
         }
 
+        .quarterTick{
+            stroke: rgba(0,0,0,.55);
+            stroke-width: 3;
+            stroke-linecap: round;
+            pointer-events: none;
+        }
+
         .monthLabel{
             fill: rgba(0,0,0,.55);
             font-size: 12px;
@@ -290,6 +304,83 @@
             dominant-baseline: middle;
             user-select:none;
             pointer-events: none;
+        }
+
+        @media (max-width: 900px){
+            .hud{
+                flex-direction: column;
+                align-items: stretch;
+                left: 10px;
+                right: 10px;
+                top: 10px;
+                gap: 10px;
+            }
+
+            .title{
+                min-width: 0;
+            }
+
+            .controls{
+                gap: 8px 10px;
+            }
+
+            label{
+                font-size: 11px;
+            }
+
+            input[type="range"]{
+                width: 110px;
+            }
+
+            .hint{
+                left: 10px;
+                right: 10px;
+                bottom: 10px;
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .center-info{
+                min-width: 0;
+                width: min(92vw, 420px);
+                max-width: 92vw;
+                padding: 12px 14px;
+            }
+
+            .center-info .d{
+                font-size: 15px;
+            }
+
+            .center-info .m,
+            .center-info .rel{
+                font-size: 12px;
+            }
+
+            .monthLabel{
+                font-size: 10px;
+            }
+        }
+
+        @media (max-width: 560px){
+            .controls{
+                padding: 8px 10px;
+            }
+
+            button{
+                padding: 6px 9px;
+            }
+
+            .hint .card{
+                font-size: 11px;
+            }
+
+            .title .h{
+                font-size: 13px;
+            }
+
+            .title .s{
+                font-size: 11px;
+            }
         }
     </style>
 </head>
@@ -336,7 +427,7 @@
 
 <div class="hint">
     <div class="card">
-        Kliknij i przeciągnij tło, żeby przesuwać • Scroll = zoom • Złap koralik i przeciągnij • Hover = data i dzień o tej samej wartości daylight
+        Kliknij i przeciągnij tło, żeby przesuwać • Scroll = zoom • Złap koralik i przeciągnij • Hover zapamiętuje ostatnią aktywną kulkę
     </div>
     <div class="card" id="stats">—</div>
 </div>
@@ -489,6 +580,11 @@
             return { x: out.x, y: out.y };
         }
 
+        function circularMidpoint(a, b, N){
+            const d = mod(b - a, N);
+            return mod(a + d / 2, N);
+        }
+
         const root = el('g', {}, svg);
         const layerGuides = el('g', {}, root);
         const layerLines  = el('g', {}, root);
@@ -502,17 +598,74 @@
         let activeMirror = null;
         let activeHover = null;
 
+        let panelDragging = false;
+        let panelOffsetX = 0;
+        let panelOffsetY = 0;
+        let panelMoved = false;
+
         function applyView(){
             root.setAttribute('transform', `translate(${view.x},${view.y}) scale(${view.scale})`);
         }
 
+        function clampCenterInfoToViewport(){
+            if (!panelMoved) return;
+
+            const rect = centerInfo.getBoundingClientRect();
+            const pad = 12;
+
+            let left = rect.left;
+            let top = rect.top;
+
+            if (rect.left < pad) left = pad;
+            if (rect.top < pad) top = pad;
+            if (rect.right > window.innerWidth - pad) {
+                left = window.innerWidth - rect.width - pad;
+            }
+            if (rect.bottom > window.innerHeight - pad) {
+                top = window.innerHeight - rect.height - pad;
+            }
+
+            centerInfo.style.left = `${Math.max(pad, left)}px`;
+            centerInfo.style.top = `${Math.max(pad, top)}px`;
+        }
+
         function resetView(){
-            const { width, height } = svg.getBoundingClientRect();
-            view.scale = 1;
-            view.x = width / 2;
-            view.y = height / 2;
+            const svgRect = svg.getBoundingClientRect();
+
+            const hudRect = document.querySelector('.hud')?.getBoundingClientRect();
+            const hintRect = document.querySelector('.hint')?.getBoundingClientRect();
+
+            const safePad = 24;
+
+            const leftBound = safePad;
+            const rightBound = svgRect.width - safePad;
+
+            const topBound = hudRect ? (hudRect.bottom + safePad) : safePad;
+            const bottomBound = hintRect ? (hintRect.top - safePad) : (svgRect.height - safePad);
+
+            const safeWidth = Math.max(120, rightBound - leftBound);
+            const safeHeight = Math.max(120, bottomBound - topBound);
+
+            const safeCenterX = leftBound + safeWidth / 2;
+            const safeCenterY = topBound + safeHeight / 2;
+
+            const modelRadius = allDays.length
+                ? Math.max(...allDays.map(d => Math.hypot(d.x, d.y)))
+                : 320;
+
+            const extraForLabels = window.innerWidth < 700 ? 84 : 70;
+            const contentRadius = modelRadius + extraForLabels;
+
+            const fitScaleX = safeWidth / (contentRadius * 2);
+            const fitScaleY = safeHeight / (contentRadius * 2);
+            const fitScale = Math.min(fitScaleX, fitScaleY, 1);
+
+            view.scale = clamp(fitScale, 0.25, 1);
+            view.x = safeCenterX;
+            view.y = safeCenterY;
+
             applyView();
-            zoomEl.value = "100";
+            zoomEl.value = String(Math.round(view.scale * 100));
         }
 
         let panning = false;
@@ -582,6 +735,52 @@
 
         resetEl.addEventListener('click', resetView);
 
+        centerInfo.addEventListener('pointerdown', (e) => {
+            e.stopPropagation();
+
+            panelDragging = true;
+            centerInfo.classList.add('dragging');
+
+            const rect = centerInfo.getBoundingClientRect();
+            panelOffsetX = e.clientX - rect.left;
+            panelOffsetY = e.clientY - rect.top;
+
+            centerInfo.setPointerCapture(e.pointerId);
+        });
+
+        centerInfo.addEventListener('pointermove', (e) => {
+            if (!panelDragging) return;
+
+            if (!panelMoved){
+                const rect = centerInfo.getBoundingClientRect();
+                centerInfo.style.left = rect.left + "px";
+                centerInfo.style.top = rect.top + "px";
+                centerInfo.style.transform = "none";
+                panelMoved = true;
+            }
+
+            const x = e.clientX - panelOffsetX;
+            const y = e.clientY - panelOffsetY;
+
+            centerInfo.style.left = x + "px";
+            centerInfo.style.top = y + "px";
+
+            clampCenterInfoToViewport();
+        });
+
+        function stopPanelDrag(e){
+            if (!panelDragging) return;
+            panelDragging = false;
+            centerInfo.classList.remove('dragging');
+            try {
+                centerInfo.releasePointerCapture(e.pointerId);
+            } catch {}
+            clampCenterInfoToViewport();
+        }
+
+        centerInfo.addEventListener('pointerup', stopPanelDrag);
+        centerInfo.addEventListener('pointercancel', stopPanelDrag);
+
         function clearMirrorHighlight(){
             if (activeMirror){
                 activeMirror.g.classList.remove('mirror-match');
@@ -591,6 +790,22 @@
                 activeHover.g.classList.remove('active-hover');
                 activeHover = null;
             }
+        }
+
+        function setActiveDay(it, daysByDoy){
+            clearMirrorHighlight();
+
+            activeHover = it;
+            it.g.classList.add('active-hover');
+
+            const mirrorIt = daysByDoy.get(it.mirrorDoy) || null;
+
+            if (mirrorIt && mirrorIt !== it){
+                activeMirror = mirrorIt;
+                mirrorIt.g.classList.add('mirror-match');
+            }
+
+            showCenterInfo(it, mirrorIt);
         }
 
         function showCenterInfo(it, mirrorIt){
@@ -673,7 +888,7 @@
             updateMonthGuidePosition(it);
         }
 
-        function makeDayDraggable(it){
+        function makeDayDraggable(it, daysByDoy){
             const g = it.g;
             let isDragging = false;
             let dragPointerId = null;
@@ -691,6 +906,8 @@
                 const world = screenToWorld(e.clientX, e.clientY);
                 offset.x = world.x - it.x;
                 offset.y = world.y - it.y;
+
+                setActiveDay(it, daysByDoy);
             });
 
             g.addEventListener('pointermove', (e) => {
@@ -714,6 +931,36 @@
 
             g.addEventListener('pointerup', stopDragging);
             g.addEventListener('pointercancel', stopDragging);
+        }
+
+        function buildQuarterTicks(baseRadius, spiralAmp, topIndex, N){
+            const anchors = getSolarAnchors(N);
+
+            const quarterBoundaries = [
+                circularMidpoint(anchors.spring, anchors.summer, N),
+                circularMidpoint(anchors.summer, anchors.autumn, N),
+                circularMidpoint(anchors.autumn, anchors.winter, N),
+                circularMidpoint(anchors.winter, anchors.spring, N)
+            ];
+
+            const tickLen = 34;
+
+            for (const boundary of quarterBoundaries){
+                const circularIndex = mod(boundary - topIndex, N);
+                const theta = (circularIndex / N) * Math.PI * 2 - Math.PI / 2;
+
+                const r = baseRadius + spiralAmp * 0.5;
+
+                const x1 = (r - tickLen) * Math.cos(theta);
+                const y1 = (r - tickLen) * Math.sin(theta);
+                const x2 = (r + tickLen) * Math.cos(theta);
+                const y2 = (r + tickLen) * Math.sin(theta);
+
+                el('line', {
+                    x1, y1, x2, y2,
+                    class: 'quarterTick'
+                }, layerGuides);
+            }
         }
 
         function buildCalendar(){
@@ -790,6 +1037,8 @@
 
             allDays = days;
 
+            buildQuarterTicks(baseRadius, spiralAmp, topIndex, N);
+
             const mirrorMap = buildMirrorMapFromDaylightValues(days);
             for (const day of days){
                 day.mirrorDoy = mirrorMap.get(day.doy);
@@ -849,40 +1098,34 @@
                 }
 
                 g.addEventListener('pointerenter', () => {
-                    clearMirrorHighlight();
-
-                    activeHover = it;
-                    it.g.classList.add('active-hover');
-
-                    const mirrorIt = daysByDoy.get(it.mirrorDoy) || null;
-
-                    if (mirrorIt && mirrorIt !== it){
-                        activeMirror = mirrorIt;
-                        mirrorIt.g.classList.add('mirror-match');
-                    }
-
-                    showCenterInfo(it, mirrorIt);
+                    setActiveDay(it, daysByDoy);
                 });
 
-                g.addEventListener('pointerleave', () => {
-                    clearMirrorHighlight();
-                });
-
-                makeDayDraggable(it);
+                makeDayDraggable(it, daysByDoy);
             }
         }
 
         function rebuild(){
             hideCenterInfo();
             buildCalendar();
+            resetView();
+            clampCenterInfoToViewport();
         }
+
+        let resizeRaf = 0;
+        window.addEventListener('resize', () => {
+            cancelAnimationFrame(resizeRaf);
+            resizeRaf = requestAnimationFrame(() => {
+                rebuild();
+            });
+        });
 
         startModeEl.addEventListener('change', rebuild);
         lineModeEl.addEventListener('change', rebuild);
         sizeEl.addEventListener('input', rebuild);
 
-        resetView();
         buildCalendar();
+        resetView();
     })();
 </script>
 </body>
