@@ -388,13 +388,21 @@
 
 <div class="hud">
     <div class="card title">
-        <div class="h">Daylight beads (daily)</div>
+        <div class="h" id="titleMain">Daylight beads (daily)</div>
         <div class="s" id="subtitle">—</div>
     </div>
 
     <div class="card controls">
         <label>
-            Orientation
+            <span id="labelLanguage">Język</span>
+            <select id="languageMode">
+                <option value="pl" selected>Polski</option>
+                <option value="en">English</option>
+            </select>
+        </label>
+
+        <label>
+            <span id="labelOrientation">Orientation</span>
             <select id="startMode">
                 <option value="jan1">Jan 1 at top</option>
                 <option value="solstice" selected>Summer solstice at top</option>
@@ -402,7 +410,7 @@
         </label>
 
         <label>
-            Lines
+            <span id="labelLines">Lines</span>
             <select id="lineMode">
                 <option value="poly">On</option>
                 <option value="none">Off</option>
@@ -410,12 +418,12 @@
         </label>
 
         <label>
-            Bead size
-            <input id="size" type="range" min="2" max="10" value="5" />
+            <span id="labelSize">Bead size</span>
+            <input id="size" type="range" min="1" max="15" value="4" />
         </label>
 
         <label>
-            Zoom
+            <span id="labelZoom">Zoom</span>
             <input id="zoom" type="range" min="35" max="220" value="100" />
         </label>
 
@@ -426,7 +434,7 @@
 <svg id="stage" role="img" aria-label="Daily beads calendar"></svg>
 
 <div class="hint">
-    <div class="card">
+    <div class="card" id="hintMain">
         Kliknij i przeciągnij tło, żeby przesuwać • Scroll = zoom • Złap koralik i przeciągnij • Hover zapamiętuje ostatnią aktywną kulkę
     </div>
     <div class="card" id="stats">—</div>
@@ -452,15 +460,128 @@
         const subtitle = document.getElementById('subtitle');
         const stats = document.getElementById('stats');
 
+        const titleMain = document.getElementById('titleMain');
+        const labelLanguage = document.getElementById('labelLanguage');
+        const labelOrientation = document.getElementById('labelOrientation');
+        const labelLines = document.getElementById('labelLines');
+        const labelSize = document.getElementById('labelSize');
+        const labelZoom = document.getElementById('labelZoom');
+        const hintMain = document.getElementById('hintMain');
+
+        const languageModeEl = document.getElementById('languageMode');
         const startModeEl = document.getElementById('startMode');
         const lineModeEl  = document.getElementById('lineMode');
         const sizeEl      = document.getElementById('size');
         const zoomEl      = document.getElementById('zoom');
         const resetEl     = document.getElementById('reset');
 
+        const I18N = {
+            pl: {
+                htmlLang: 'pl',
+                pageTitle: 'Daylight beads — daily',
+                stageAria: 'Dzienny kalendarz koralikowy',
+                title: 'Daylight beads (daily)',
+                language: 'Language',
+                orientation: 'Orientacja',
+                lines: 'Linie',
+                beadSize: 'Rozmiar koralików',
+                zoom: 'Zoom',
+                resetView: 'Reset view',
+                startJan1: '1 stycznia u góry',
+                startSolstice: 'Przesilenie letnie u góry',
+                linesOn: 'Wł.',
+                linesOff: 'Wył.',
+                hint: 'Kliknij i przeciągnij tło, żeby przesuwać • Scroll = zoom • Złap koralik i przeciągnij • Hover zapamiętuje ostatnią aktywną kulkę',
+                subtitle: ({year, days, top}) => `${year} • ${days} dni • widok: cały bieżący rok • góra: ${top}`,
+                subtitleTopJan1: '1 stycznia',
+                subtitleTopSolstice: 'przesilenie letnie',
+                statsRange: ({from, to}) => `Zakres: ${from} → ${to}`,
+                centerMeta: ({dayIndex, yearLength, value, gray}) =>
+                    `Dzień ${dayIndex} z ${yearLength} • daylight=${value} • kolor RGB(${gray}, ${gray}, ${gray})`,
+                centerRelationSame: ({date}) =>
+                    `${date} odpowiada samemu sobie`,
+                centerRelationMirror: ({date, mirrorDate}) =>
+                    `${date} odpowiada ${mirrorDate} dla tej samej wartości daylight`,
+                today: 'Dzisiaj',
+                monthNames: ['Sty', 'Lut', 'Mar', 'Kwi', 'Maj', 'Cze', 'Lip', 'Sie', 'Wrz', 'Paź', 'Lis', 'Gru'],
+                dateLocale: 'pl-PL',
+                specialTags: {
+                    spring: 'Równonoc marcowa',
+                    summer: 'Przesilenie letnie',
+                    autumn: 'Równonoc wrześniowa',
+                    winter: 'Przesilenie zimowe'
+                }
+            },
+            en: {
+                htmlLang: 'en',
+                pageTitle: 'Daylight beads — daily',
+                stageAria: 'Daily bead calendar',
+                title: 'Daylight beads (daily)',
+                language: 'Język',
+                orientation: 'Orientation',
+                lines: 'Lines',
+                beadSize: 'Bead size',
+                zoom: 'Zoom',
+                resetView: 'Reset view',
+                startJan1: 'Jan 1 at top',
+                startSolstice: 'Summer solstice at top',
+                linesOn: 'On',
+                linesOff: 'Off',
+                hint: 'Drag the background to pan • Scroll = zoom • Grab a bead and drag it • Hover remembers the last active bead',
+                subtitle: ({year, days, top}) => `${year} • ${days} days • view: current year • top: ${top}`,
+                subtitleTopJan1: 'Jan 1',
+                subtitleTopSolstice: 'summer solstice',
+                statsRange: ({from, to}) => `Range: ${from} → ${to}`,
+                centerMeta: ({dayIndex, yearLength, value, gray}) =>
+                    `Day ${dayIndex} of ${yearLength} • daylight=${value} • color RGB(${gray}, ${gray}, ${gray})`,
+                centerRelationSame: ({date}) =>
+                    `${date} maps to itself`,
+                centerRelationMirror: ({date, mirrorDate}) =>
+                    `${date} maps to ${mirrorDate} for the same daylight value`,
+                today: 'Today',
+                monthNames: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+                dateLocale: 'en-US',
+                specialTags: {
+                    spring: 'March equinox',
+                    summer: 'Summer solstice',
+                    autumn: 'September equinox',
+                    winter: 'Winter solstice'
+                }
+            }
+        };
+
+        let currentLang = languageModeEl.value || 'pl';
+
         const isLeapYear = (y) => (y % 4 === 0 && y % 100 !== 0) || (y % 400 === 0);
         const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
         const EPS = 1e-12;
+
+        function t(){
+            return I18N[currentLang];
+        }
+
+        function applyStaticI18n(){
+            const tr = t();
+
+            document.documentElement.lang = tr.htmlLang;
+            document.title = tr.pageTitle;
+            svg.setAttribute('aria-label', tr.stageAria);
+
+            titleMain.textContent = tr.title;
+            labelLanguage.textContent = tr.language;
+            labelOrientation.textContent = tr.orientation;
+            labelLines.textContent = tr.lines;
+            labelSize.textContent = tr.beadSize;
+            labelZoom.textContent = tr.zoom;
+            resetEl.textContent = tr.resetView;
+            hintMain.textContent = tr.hint;
+
+            startModeEl.options[0].textContent = tr.startJan1;
+            startModeEl.options[1].textContent = tr.startSolstice;
+
+            lineModeEl.options[0].textContent = tr.linesOn;
+            lineModeEl.options[1].textContent = tr.linesOff;
+        }
 
         function mod(n, m){
             return ((n % m) + m) % m;
@@ -474,10 +595,10 @@
         function specialTag(date){
             const m = date.getMonth(), dd = date.getDate();
             const approx = [
-                { m: 2,  d: 21, name: "Równonoc marcowa" },
-                { m: 5,  d: 22, name: "Przesilenie letnie" },
-                { m: 8,  d: 22, name: "Równonoc wrześniowa" },
-                { m: 11, d: 20, name: "Przesilenie zimowe" },
+                { m: 2,  d: 21, name: t().specialTags.spring },
+                { m: 5,  d: 22, name: t().specialTags.summer },
+                { m: 8,  d: 22, name: t().specialTags.autumn },
+                { m: 11, d: 20, name: t().specialTags.winter },
             ];
             for (const a of approx){
                 if (m === a.m && Math.abs(dd - a.d) <= 1) return a.name;
@@ -557,9 +678,26 @@
         }
 
         function formatShortDate(date){
-            return date.toLocaleDateString('pl-PL', {
+            return date.toLocaleDateString(t().dateLocale, {
                 day: 'numeric',
                 month: 'long'
+            });
+        }
+
+        function formatLongDate(date){
+            return date.toLocaleDateString(t().dateLocale, {
+                weekday:'long',
+                year:'numeric',
+                month:'long',
+                day:'numeric'
+            });
+        }
+
+        function formatRangeDate(date){
+            return date.toLocaleDateString(t().dateLocale, {
+                day:"numeric",
+                month:"long",
+                year:"numeric"
             });
         }
 
@@ -809,27 +947,29 @@
         }
 
         function showCenterInfo(it, mirrorIt){
-            centerDate.textContent = it.d.toLocaleDateString('pl-PL', {
-                weekday:'long',
-                year:'numeric',
-                month:'long',
-                day:'numeric'
+            centerDate.textContent = formatLongDate(it.d);
+
+            centerMeta.textContent = t().centerMeta({
+                dayIndex: it.doy + 1,
+                yearLength: it.yearLength,
+                value: it.lightValue.toFixed(6),
+                gray: it.grayIndex
             });
 
-            centerMeta.textContent =
-                `Dzień ${it.doy + 1} z ${it.yearLength} • daylight=${it.lightValue.toFixed(6)} • kolor RGB(${it.grayIndex}, ${it.grayIndex}, ${it.grayIndex})`;
-
             if (mirrorIt && mirrorIt !== it){
-                centerRelation.textContent =
-                    `${formatShortDate(it.d)} odpowiada ${formatShortDate(mirrorIt.d)} dla tej samej wartości daylight`;
+                centerRelation.textContent = t().centerRelationMirror({
+                    date: formatShortDate(it.d),
+                    mirrorDate: formatShortDate(mirrorIt.d)
+                });
             } else {
-                centerRelation.textContent =
-                    `${formatShortDate(it.d)} odpowiada samemu sobie`;
+                centerRelation.textContent = t().centerRelationSame({
+                    date: formatShortDate(it.d)
+                });
             }
 
             if (it.isToday){
                 centerTag.style.display = 'inline-block';
-                centerTag.textContent = 'Dzisiaj';
+                centerTag.textContent = t().today;
             } else if (it.tag){
                 centerTag.style.display = 'inline-block';
                 centerTag.textContent = it.tag;
@@ -983,14 +1123,17 @@
                 ? dayOfYear0(new Date(currentYear, 5, 21))
                 : 0;
 
-            subtitle.textContent =
-                `${currentYear} • ${N} dni • widok: cały bieżący rok • góra: ${startMode === 'solstice' ? 'przesilenie letnie' : '1 stycznia'}`;
+            subtitle.textContent = t().subtitle({
+                year: currentYear,
+                days: N,
+                top: startMode === 'solstice' ? t().subtitleTopSolstice : t().subtitleTopJan1
+            });
 
             const beadR = Number(sizeEl.value);
-            const baseRadius = Math.max(260, N * beadR * 0.32);
+            const baseRadius = Math.max(260, N * beadR * 0.3);
             const spiralAmp = Math.max(16, beadR * 5);
 
-            const monthNames = ["Sty", "Lut", "Mar", "Kwi", "Maj", "Cze", "Lip", "Sie", "Wrz", "Paź", "Lis", "Gru"];
+            const monthNames = t().monthNames;
             const days = [];
             const daysByDoy = new Map();
 
@@ -1044,9 +1187,10 @@
                 day.mirrorDoy = mirrorMap.get(day.doy);
             }
 
-            const d0 = days[0].d.toLocaleDateString('pl-PL', { day:"numeric", month:"long", year:"numeric" });
-            const d1 = days[days.length - 1].d.toLocaleDateString('pl-PL', { day:"numeric", month:"long", year:"numeric" });
-            stats.textContent = `Zakres: ${d0} → ${d1}`;
+            stats.textContent = t().statsRange({
+                from: formatRangeDate(days[0].d),
+                to: formatRangeDate(days[days.length - 1].d)
+            });
 
             const monthFirstIndex = [];
             for (let m = 0; m < 12; m++){
@@ -1076,7 +1220,7 @@
 
                 const isMonthStart = it.d.getDate() === 1;
                 const baseRDay = isMonthStart ? beadR + 1.4 : beadR;
-                const hoverR = Math.max(baseRDay + 4, baseRDay * 1.8);
+                const hoverR = Math.max(baseRDay + 4, baseRDay * 2);
 
                 g.style.setProperty('--r', `${baseRDay}px`);
                 g.style.setProperty('--rh', `${hoverR}px`);
@@ -1107,6 +1251,7 @@
 
         function rebuild(){
             hideCenterInfo();
+            applyStaticI18n();
             buildCalendar();
             resetView();
             clampCenterInfoToViewport();
@@ -1120,10 +1265,16 @@
             });
         });
 
+        languageModeEl.addEventListener('change', () => {
+            currentLang = languageModeEl.value;
+            rebuild();
+        });
+
         startModeEl.addEventListener('change', rebuild);
         lineModeEl.addEventListener('change', rebuild);
         sizeEl.addEventListener('input', rebuild);
 
+        applyStaticI18n();
         buildCalendar();
         resetView();
     })();
